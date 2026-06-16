@@ -15,8 +15,10 @@ const FILTER_OPTIONS = [
   { key: 'T', label: '통역' },
 ];
 const NEEDS_WORK_OPTIONS = ['Y', 'N', 'K'];
+const ADMIN_OPTIONS = ['Kim', 'Park', 'Mika', 'Ryu'];
 const DEFAULT_CG = { name: '', address: '', needsWork: 'N', strengths: [], memo: '', cgId: '' };
-const DEFAULT_CS = { name: '', address: '' };
+const DEFAULT_CS = { name: '', address: '', admin: '' };
+const ADMIN_PASSWORD = '30071';
 const LA_CENTER = { lat: 34.0522, lng: -118.2437 };
 const POPUP_W = 260;
 
@@ -145,7 +147,7 @@ function CaregiverForm({ data, onSave, onCancel }) {
           type="number"
           min="1000"
           max="9999"
-          value={form.cgId}
+          value={form.cgId || ''}
           onChange={e => setForm(p => ({ ...p, cgId: e.target.value }))}
           placeholder="예: 3088"
         />
@@ -215,6 +217,12 @@ function CustomerForm({ data, onSave, onCancel }) {
       <Field label="주소">
         <input style={S.input} value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="456 Oak Ave, Los Angeles, CA" />
       </Field>
+      <Field label="담당 Admin">
+        <select style={S.input} value={form.admin || ''} onChange={e => setForm(p => ({ ...p, admin: e.target.value }))}>
+          <option value="">선택 안 함</option>
+          {ADMIN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </Field>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
         <button style={{ ...S.btnEdit, padding: '10px 20px' }} onClick={onCancel}>취소</button>
         <button
@@ -242,9 +250,9 @@ export default function Home() {
   const [caregivers, setCaregivers] = useState([]);
 
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [selectedCaregiver, setSelectedCaregiver] = useState(null); // popup
-  const [selectedCgId, setSelectedCgId] = useState(null);          // sidebar selection
-  const [selectedCsId, setSelectedCsId] = useState(null);          // sidebar selection
+  const [selectedCaregiver, setSelectedCaregiver] = useState(null);
+  const [selectedCgIds, setSelectedCgIds] = useState([]);
+  const [selectedCsIds, setSelectedCsIds] = useState([]);
 
   const [radii, setRadii] = useState(['5', '10', '']);
   const [activeFilter, setActiveFilter] = useState(null);
@@ -254,6 +262,9 @@ export default function Home() {
   const [loading, setLoading] = useState('');
   const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
   const [isLoaded, setIsLoaded] = useState(false);
+
+  const [adminMode, setAdminMode] = useState(false);
+  const [csSortOrder, setCsSortOrder] = useState('alpha'); // 'alpha' | 'admin'
 
   // ── Refs ───────────────────────────────
   const mapRef = useRef(null);
@@ -265,7 +276,6 @@ export default function Home() {
 
   // ── Persistence ────────────────────────
 
-  // API key stays in localStorage (browser-only, per-user)
   useEffect(() => {
     try {
       const k = localStorage.getItem('cgmap_apikey');
@@ -273,8 +283,6 @@ export default function Home() {
     } catch (e) {}
   }, []);
 
-  // Load customers & caregivers from Vercel KV API
-  // Falls back to localStorage when running locally without Vercel KV
   useEffect(() => {
     async function load() {
       try {
@@ -285,7 +293,6 @@ export default function Home() {
         setCustomers(Array.isArray(c) ? c : []);
         setCaregivers(Array.isArray(cg) ? cg : []);
       } catch {
-        // localStorage fallback for local dev without Vercel KV env vars
         try {
           const c = localStorage.getItem('cgmap_customers');
           const cg = localStorage.getItem('cgmap_caregivers');
@@ -299,7 +306,6 @@ export default function Home() {
     load();
   }, []);
 
-  // Save customers — only after initial load to avoid overwriting with empty data
   useEffect(() => {
     if (!isLoaded) return;
     fetch('/api/customers', {
@@ -311,7 +317,6 @@ export default function Home() {
     });
   }, [customers, isLoaded]);
 
-  // Save caregivers
   useEffect(() => {
     if (!isLoaded) return;
     fetch('/api/caregivers', {
@@ -323,19 +328,14 @@ export default function Home() {
     });
   }, [caregivers, isLoaded]);
 
-  // ── Close popup when clicking outside (sidebar, etc.) ──
+  // ── Close popup on outside click ────────
   useEffect(() => {
     if (!selectedCaregiver) return;
-
     const handleMouseDown = (e) => {
-      // Inside popup → keep open
       if (popupRef.current?.contains(e.target)) return;
-      // Inside map canvas → let Google Maps handle (map click listener will close if on bg)
       if (mapRef.current?.contains(e.target)) return;
-      // Anywhere else (sidebar, etc.) → close
       setSelectedCaregiver(null);
     };
-
     document.addEventListener('mousedown', handleMouseDown);
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [selectedCaregiver]);
@@ -349,7 +349,6 @@ export default function Home() {
     }
     if (document.getElementById('cgmap-gmaps')) return;
 
-    // Called by Google Maps when key is invalid or billing/API not set up
     window.gm_authFailure = () => {
       localStorage.removeItem('cgmap_apikey');
       setApiKey('');
@@ -381,7 +380,6 @@ export default function Home() {
       center: LA_CENTER,
       zoom: 11,
     });
-    // Clicking the map background closes the popup
     mapInst.current.addListener('click', () => setSelectedCaregiver(null));
   }, [mapLoaded]);
 
@@ -419,7 +417,6 @@ export default function Home() {
       });
 
       marker.addListener('click', (e) => {
-        // Get pixel position relative to the map container
         const mapRect = mapRef.current.getBoundingClientRect();
         const x = e.domEvent.clientX - mapRect.left;
         const y = e.domEvent.clientY - mapRect.top;
@@ -518,11 +515,11 @@ export default function Home() {
   };
 
   const handleDeleteCg = () => {
-    if (!selectedCgId) return alert('삭제할 간병인을 먼저 선택해주세요.');
-    if (!confirm('선택한 간병인을 삭제하시겠습니까?')) return;
-    setCaregivers(p => p.filter(cg => cg.id !== selectedCgId));
-    if (selectedCaregiver?.id === selectedCgId) setSelectedCaregiver(null);
-    setSelectedCgId(null);
+    if (!selectedCgIds.length) return alert('삭제할 간병인을 먼저 선택해주세요.');
+    if (!confirm(`선택한 간병인 ${selectedCgIds.length}명을 삭제하시겠습니까?`)) return;
+    setCaregivers(p => p.filter(cg => !selectedCgIds.includes(cg.id)));
+    if (selectedCgIds.includes(selectedCaregiver?.id)) setSelectedCaregiver(null);
+    setSelectedCgIds([]);
   };
 
   // ── CRUD: Customer ─────────────────────
@@ -552,11 +549,11 @@ export default function Home() {
   };
 
   const handleDeleteCs = () => {
-    if (!selectedCsId) return alert('삭제할 고객을 먼저 선택해주세요.');
-    if (!confirm('선택한 고객을 삭제하시겠습니까?')) return;
-    if (selectedCustomer?.id === selectedCsId) setSelectedCustomer(null);
-    setCustomers(p => p.filter(c => c.id !== selectedCsId));
-    setSelectedCsId(null);
+    if (!selectedCsIds.length) return alert('삭제할 고객을 먼저 선택해주세요.');
+    if (!confirm(`선택한 고객 ${selectedCsIds.length}명을 삭제하시겠습니까?`)) return;
+    if (selectedCsIds.includes(selectedCustomer?.id)) setSelectedCustomer(null);
+    setCustomers(p => p.filter(c => !selectedCsIds.includes(c.id)));
+    setSelectedCsIds([]);
   };
 
   // ── CSV upload ─────────────────────────
@@ -581,7 +578,13 @@ export default function Home() {
         try {
           const coords = await geocode(row.address);
           if (type === 'customer') {
-            newItems.push({ id: uid(), name: row.name, address: row.address, ...coords });
+            newItems.push({
+              id: uid(),
+              name: row.name,
+              address: row.address,
+              admin: row.admin || '',
+              ...coords,
+            });
           } else {
             const rawStrengths = row.strengths || '';
             const strengths = rawStrengths
@@ -604,23 +607,52 @@ export default function Home() {
         }
       }
 
-      if (type === 'customer') setCustomers(newItems);
-      else setCaregivers(newItems);
+      // Replace existing data
+      if (type === 'customer') {
+        setCustomers(newItems);
+      } else {
+        setCaregivers(newItems);
+      }
 
-      alert(`${newItems.length}건이 추가되었습니다.`);
+      alert(`${newItems.length}건으로 교체되었습니다.`);
     } catch (e) {
       alert('CSV 처리 중 오류가 발생했습니다.');
     }
     setLoading('');
   };
 
+  // ── Admin toggle ───────────────────────
+  const handleAdminToggle = () => {
+    if (adminMode) {
+      setAdminMode(false);
+      return;
+    }
+    const pw = prompt('비밀번호를 입력해주세요:');
+    if (pw === null) return;
+    if (pw === ADMIN_PASSWORD) {
+      setAdminMode(true);
+    } else {
+      alert('비밀번호가 틀렸습니다.');
+    }
+  };
+
+  // ── Sorted customers ───────────────────
+  const sortedCustomers = [...customers].sort((a, b) => {
+    if (csSortOrder === 'admin') {
+      const adminCmp = (a.admin || 'zzz').localeCompare(b.admin || 'zzz');
+      if (adminCmp !== 0) return adminCmp;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  // ── Caregivers needing work ─────────────
+  const needsWorkCaregivers = caregivers.filter(cg => cg.needsWork === 'Y');
+
   // ── API key screen ─────────────────────
   if (!apiKey) {
     return (
       <>
-        <Head>
-          <title>간병인 지도 서비스</title>
-        </Head>
+        <Head><title>간병인 지도 서비스</title></Head>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'linear-gradient(135deg, #EDE9FE 0%, #DBEAFE 100%)' }}>
           <div style={{ background: 'white', borderRadius: 20, padding: '48px 40px', maxWidth: 460, width: '90%', textAlign: 'center', boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}>
             <div style={{ fontSize: 52, marginBottom: 12 }}>🗺️</div>
@@ -638,14 +670,7 @@ export default function Home() {
               }}
             >
               <input
-                style={{
-                  ...S.input,
-                  padding: '13px 16px',
-                  fontSize: 14,
-                  marginBottom: 14,
-                  border: '1.5px solid #D1D5DB',
-                  borderRadius: 10,
-                }}
+                style={{ ...S.input, padding: '13px 16px', fontSize: 14, marginBottom: 14, border: '1.5px solid #D1D5DB', borderRadius: 10 }}
                 type="text"
                 placeholder="Google Maps API Key"
                 value={apiKeyInput}
@@ -655,31 +680,19 @@ export default function Home() {
               />
               <button
                 type="submit"
-                style={{
-                  width: '100%',
-                  padding: 14,
-                  background: '#7C3AED',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: 10,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
+                style={{ width: '100%', padding: 14, background: '#7C3AED', color: 'white', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}
               >
                 시작하기
               </button>
             </form>
-            {mapError && (
-              <p style={{ marginTop: 16, color: '#DC2626', fontSize: 13 }}>{mapError}</p>
-            )}
+            {mapError && <p style={{ marginTop: 16, color: '#DC2626', fontSize: 13 }}>{mapError}</p>}
           </div>
         </div>
       </>
     );
   }
 
-  // ── Popup position calculation ──────────
+  // ── Popup position ──────────────────────
   const mapAreaW = mapRef.current?.offsetWidth ?? 800;
   const mapAreaH = mapRef.current?.offsetHeight ?? 600;
   const showLeft = popupPos.x + POPUP_W + 20 > mapAreaW;
@@ -689,11 +702,8 @@ export default function Home() {
   // ── Main layout ────────────────────────
   return (
     <>
-      <Head>
-        <title>간병인 지도 서비스</title>
-      </Head>
+      <Head><title>간병인 지도 서비스</title></Head>
 
-      {/* Loading overlay */}
       {loading && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
           <div style={{ background: 'white', padding: '24px 36px', borderRadius: 14, fontSize: 15, fontWeight: 600, color: '#374151', boxShadow: '0 8px 32px rgba(0,0,0,0.15)' }}>
@@ -710,51 +720,102 @@ export default function Home() {
           <div style={{ padding: '16px 16px 8px', flexShrink: 0, borderBottom: '1px solid #E5E7EB', background: 'white' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: '#1F2937' }}>🗺️ 간병인 지도</span>
-              <button
-                onClick={() => {
-                  if (confirm('API 키를 초기화하고 처음 화면으로 돌아가시겠습니까?')) {
-                    localStorage.removeItem('cgmap_apikey');
-                    setApiKey('');
-                    setApiKeyInput('');
-                    setMapLoaded(false);
-                    mapInst.current = null;
-                  }
-                }}
-                style={{ fontSize: 11, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                API 키 변경
-              </button>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  onClick={handleAdminToggle}
+                  style={{
+                    fontSize: 11,
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: `1px solid ${adminMode ? '#F59E0B' : '#D1D5DB'}`,
+                    background: adminMode ? '#FEF3C7' : 'white',
+                    color: adminMode ? '#B45309' : '#6B7280',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  {adminMode ? '관리 중 ✕' : '관리'}
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm('API 키를 초기화하고 처음 화면으로 돌아가시겠습니까?')) {
+                      localStorage.removeItem('cgmap_apikey');
+                      setApiKey('');
+                      setApiKeyInput('');
+                      setMapLoaded(false);
+                      mapInst.current = null;
+                    }
+                  }}
+                  style={{ fontSize: 11, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}
+                >
+                  키 변경
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Customer list */}
-          <div style={{ padding: '12px 14px 6px', flexShrink: 0 }}>
-            <div style={S.sectionTitle}>고객 리스트</div>
+          <div style={{ padding: '12px 14px 4px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <div style={S.sectionTitle}>고객 리스트</div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button
+                  onClick={() => setCsSortOrder('alpha')}
+                  style={{
+                    fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid',
+                    borderColor: csSortOrder === 'alpha' ? '#7C3AED' : '#D1D5DB',
+                    background: csSortOrder === 'alpha' ? '#7C3AED' : 'white',
+                    color: csSortOrder === 'alpha' ? 'white' : '#6B7280',
+                    cursor: 'pointer', fontWeight: 600,
+                  }}
+                >가나다</button>
+                <button
+                  onClick={() => setCsSortOrder('admin')}
+                  style={{
+                    fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid',
+                    borderColor: csSortOrder === 'admin' ? '#7C3AED' : '#D1D5DB',
+                    background: csSortOrder === 'admin' ? '#7C3AED' : 'white',
+                    color: csSortOrder === 'admin' ? 'white' : '#6B7280',
+                    cursor: 'pointer', fontWeight: 600,
+                  }}
+                >Admin</button>
+              </div>
+            </div>
           </div>
-          <div style={{ flex: '0 0 170px', overflowY: 'auto', padding: '0 14px 8px' }}>
-            {customers.length === 0 ? (
+          <div style={{ flex: '0 0 160px', overflowY: 'auto', padding: '0 14px 8px' }}>
+            {sortedCustomers.length === 0 ? (
               <p style={{ color: '#9CA3AF', fontSize: 12, padding: '6px 0' }}>고객이 없습니다</p>
             ) : (
-              customers.map(c => (
+              sortedCustomers.map(c => (
                 <div
                   key={c.id}
                   style={{
-                    padding: '7px 11px',
+                    padding: '6px 10px',
                     borderRadius: 8,
                     cursor: 'pointer',
-                    marginBottom: 4,
-                    background: selectedCustomer?.id === c.id ? '#DBEAFE' : 'white',
-                    border: `1px solid ${selectedCustomer?.id === c.id ? '#93C5FD' : '#E5E7EB'}`,
+                    marginBottom: 3,
+                    background: selectedCsIds.includes(c.id) ? '#DBEAFE' : 'white',
+                    border: `1px solid ${selectedCsIds.includes(c.id) ? '#93C5FD' : '#E5E7EB'}`,
                     fontWeight: selectedCustomer?.id === c.id ? 700 : 400,
                     color: '#1F2937',
                     fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
                   }}
-                  onClick={() => {
-                    setSelectedCustomer(c);
-                    setSelectedCsId(c.id);
+                  onClick={e => {
+                    if (e.ctrlKey || e.metaKey) {
+                      setSelectedCsIds(p => p.includes(c.id) ? p.filter(id => id !== c.id) : [...p, c.id]);
+                    } else {
+                      setSelectedCustomer(c);
+                      setSelectedCsIds([c.id]);
+                    }
                   }}
                 >
-                  📍 {c.name}
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {c.name}</span>
+                  {c.admin && (
+                    <span style={{ fontSize: 10, color: '#7C3AED', background: '#F3E8FF', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{c.admin}</span>
+                  )}
                 </div>
               ))
             )}
@@ -766,7 +827,6 @@ export default function Home() {
             {/* Radius */}
             <div style={S.sectionBox}>
               <div style={S.sectionTitle}>반경 선택 (마일)</div>
-              <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 8 }}>디폴트: 5마일, 10마일 | 최대 3개</p>
               <div style={{ display: 'flex', gap: 6 }}>
                 {radii.map((r, i) => (
                   <input
@@ -783,21 +843,23 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Filter */}
+            {/* Filter — single row */}
             <div style={S.sectionBox}>
               <div style={S.sectionTitle}>간병인 필터</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'nowrap', overflowX: 'auto' }}>
                 {FILTER_OPTIONS.map(f => (
                   <button
                     key={f.key}
                     onClick={() => setActiveFilter(p => (p === f.key ? null : f.key))}
                     style={{
-                      padding: '5px 13px',
+                      padding: '5px 10px',
                       borderRadius: 16,
                       border: 'none',
                       cursor: 'pointer',
                       fontSize: 12,
                       fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                       background: activeFilter === f.key ? '#7C3AED' : '#E5E7EB',
                       color: activeFilter === f.key ? 'white' : '#4B5563',
                     }}
@@ -808,31 +870,71 @@ export default function Home() {
               </div>
               {activeFilter && (
                 <p style={{ fontSize: 11, color: '#7C3AED', marginTop: 6 }}>
-                  ● 노란색 = <b>{FILTER_OPTIONS.find(f => f.key === activeFilter)?.label}</b> 강점 보유 간병인
+                  ● 노란색 = <b>{FILTER_OPTIONS.find(f => f.key === activeFilter)?.label}</b> 강점 보유
                 </p>
+              )}
+            </div>
+
+            {/* Caregivers needing work (needsWork=Y) */}
+            <div style={S.sectionBox}>
+              <div style={S.sectionTitle}>업무 필요 간병인 ({needsWorkCaregivers.length})</div>
+              {needsWorkCaregivers.length === 0 ? (
+                <p style={{ color: '#9CA3AF', fontSize: 12 }}>없음</p>
+              ) : (
+                <div style={{ maxHeight: 110, overflowY: 'auto' }}>
+                  {needsWorkCaregivers.map(cg => (
+                    <div
+                      key={cg.id}
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        marginBottom: 3,
+                        background: selectedCgIds.includes(cg.id) ? '#F3E8FF' : '#FDF4FF',
+                        border: `1px solid ${selectedCgIds.includes(cg.id) ? '#C4B5FD' : '#E9D5FF'}`,
+                        fontSize: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      onClick={e => {
+                        if (e.ctrlKey || e.metaKey) {
+                          setSelectedCgIds(p => p.includes(cg.id) ? p.filter(id => id !== cg.id) : [...p, cg.id]);
+                        } else {
+                          setSelectedCgIds([cg.id]);
+                        }
+                      }}
+                    >
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
             {/* Caregiver management */}
             <div style={S.sectionBox}>
-              <div style={S.sectionTitle}>간병인</div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                <button style={S.btnAdd} onClick={() => setCgModal({ open: true, mode: 'add', data: DEFAULT_CG })}>추가</button>
-                <button
-                  style={S.btnEdit}
-                  onClick={() => {
-                    const cg = caregivers.find(c => c.id === selectedCgId);
-                    if (!cg) return alert('수정할 간병인을 먼저 선택해주세요.');
-                    setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } });
-                  }}
-                >
-                  수정
-                </button>
-                <button style={S.btnDel} onClick={handleDeleteCg}>삭제</button>
-              </div>
+              <div style={S.sectionTitle}>간병인 전체 ({caregivers.length})</div>
 
-              {/* Caregiver list in sidebar */}
-              <div style={{ maxHeight: 130, overflowY: 'auto', marginBottom: 8 }}>
+              {adminMode && (
+                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                  <button style={S.btnAdd} onClick={() => setCgModal({ open: true, mode: 'add', data: DEFAULT_CG })}>추가</button>
+                  <button
+                    style={S.btnEdit}
+                    onClick={() => {
+                      const cg = caregivers.find(c => c.id === selectedCgIds[0]);
+                      if (!cg) return alert('수정할 간병인을 먼저 선택해주세요.');
+                      setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } });
+                    }}
+                  >
+                    수정
+                  </button>
+                  <button style={S.btnDel} onClick={handleDeleteCg}>삭제</button>
+                </div>
+              )}
+
+              <div style={{ maxHeight: 140, overflowY: 'auto', marginBottom: adminMode ? 8 : 0 }}>
                 {caregivers.length === 0 ? (
                   <p style={{ color: '#9CA3AF', fontSize: 12 }}>간병인이 없습니다</p>
                 ) : (
@@ -844,24 +946,22 @@ export default function Home() {
                         borderRadius: 6,
                         cursor: 'pointer',
                         marginBottom: 3,
-                        background: selectedCgId === cg.id ? '#F3E8FF' : 'white',
-                        border: `1px solid ${selectedCgId === cg.id ? '#C4B5FD' : '#E5E7EB'}`,
+                        background: selectedCgIds.includes(cg.id) ? '#F3E8FF' : 'white',
+                        border: `1px solid ${selectedCgIds.includes(cg.id) ? '#C4B5FD' : '#E5E7EB'}`,
                         fontSize: 12,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 6,
                       }}
-                      onClick={() => setSelectedCgId(cg.id)}
+                      onClick={e => {
+                        if (e.ctrlKey || e.metaKey) {
+                          setSelectedCgIds(p => p.includes(cg.id) ? p.filter(id => id !== cg.id) : [...p, cg.id]);
+                        } else {
+                          setSelectedCgIds([cg.id]);
+                        }
+                      }}
                     >
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: cg.needsWork === 'Y' ? '#8B5CF6' : '#EF4444',
-                          flexShrink: 0,
-                        }}
-                      />
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: cg.needsWork === 'Y' ? '#8B5CF6' : '#EF4444', flexShrink: 0 }} />
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
                       <span style={{ fontSize: 10, color: '#9CA3AF', background: '#F3F4F6', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
                         {cg.needsWork}
@@ -871,54 +971,49 @@ export default function Home() {
                 )}
               </div>
 
-              <label
-                style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}
-              >
-                📁 CSV 업로드 (간병인)
-                <input
-                  type="file"
-                  accept=".csv"
-                  style={{ display: 'none' }}
-                  onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'caregiver'); e.target.value = ''; }}
-                />
-              </label>
-              <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 5, lineHeight: 1.5 }}>
-                CSV 헤더: name, address, needswork, strengths, memo
-              </p>
+              {adminMode && (
+                <>
+                  <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
+                    📁 CSV 업로드 (간병인)
+                    <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'caregiver'); e.target.value = ''; }} />
+                  </label>
+                </>
+              )}
             </div>
 
             {/* Customer management */}
             <div style={{ ...S.sectionBox, marginBottom: 0 }}>
               <div style={S.sectionTitle}>고객</div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                <button style={S.btnAdd} onClick={() => setCsModal({ open: true, mode: 'add', data: DEFAULT_CS })}>추가</button>
-                <button
-                  style={S.btnEdit}
-                  onClick={() => {
-                    const c = customers.find(c => c.id === selectedCsId);
-                    if (!c) return alert('수정할 고객을 먼저 선택해주세요.');
-                    setCsModal({ open: true, mode: 'edit', data: { ...c } });
-                  }}
-                >
-                  수정
-                </button>
-                <button style={S.btnDel} onClick={handleDeleteCs}>삭제</button>
-              </div>
-              <label
-                style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}
-              >
-                📁 CSV 업로드 (고객)
-                <input
-                  type="file"
-                  accept=".csv"
-                  style={{ display: 'none' }}
-                  onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'customer'); e.target.value = ''; }}
-                />
-              </label>
-              <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 5, lineHeight: 1.5 }}>
-                CSV 헤더: name, address
-              </p>
+
+              {adminMode && (
+                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                  <button style={S.btnAdd} onClick={() => setCsModal({ open: true, mode: 'add', data: DEFAULT_CS })}>추가</button>
+                  <button
+                    style={S.btnEdit}
+                    onClick={() => {
+                      const c = customers.find(c => c.id === selectedCsIds[0]);
+                      if (!c) return alert('수정할 고객을 먼저 선택해주세요.');
+                      setCsModal({ open: true, mode: 'edit', data: { ...c } });
+                    }}
+                  >
+                    수정
+                  </button>
+                  <button style={S.btnDel} onClick={handleDeleteCs}>삭제</button>
+                </div>
+              )}
+
+              {adminMode && (
+                <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
+                  📁 CSV 업로드 (고객)
+                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'customer'); e.target.value = ''; }} />
+                </label>
+              )}
+
+              {!adminMode && (
+                <p style={{ color: '#9CA3AF', fontSize: 12 }}>관리 버튼을 눌러 편집하세요.</p>
+              )}
             </div>
+
           </div>
         </div>
 
@@ -932,7 +1027,7 @@ export default function Home() {
           )}
           <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-          {/* Caregiver info popup — positioned next to the clicked marker */}
+          {/* Caregiver popup */}
           {selectedCaregiver && (
             <div
               ref={popupRef}
@@ -951,7 +1046,6 @@ export default function Home() {
               onClick={e => e.stopPropagation()}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                {/* Name is clickable → opens edit modal */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
                   <strong
                     style={{ fontSize: 16, color: '#7C3AED', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
@@ -988,18 +1082,12 @@ export default function Home() {
                   ✕
                 </button>
               </div>
-              <InfoRow
-                label="업무 필요"
-                value={selectedCaregiver.needsWork}
-                highlight={selectedCaregiver.needsWork === 'Y'}
-              />
+              <InfoRow label="업무 필요" value={selectedCaregiver.needsWork} highlight={selectedCaregiver.needsWork === 'Y'} />
               <InfoRow
                 label="강점"
-                value={selectedCaregiver.strengths?.length ? selectedCaregiver.strengths.join(', ') : '없음'}
+                value={selectedCaregiver.strengths?.length ? selectedCaregiver.strengths.map(s => STRENGTH_LABELS[s] || s).join(', ') : '없음'}
               />
-              {selectedCaregiver.memo && (
-                <InfoRow label="메모" value={selectedCaregiver.memo} />
-              )}
+              {selectedCaregiver.memo && <InfoRow label="메모" value={selectedCaregiver.memo} />}
               <div style={{ marginTop: 10, borderTop: '1px solid #F3F4F6', paddingTop: 10 }}>
                 <p style={{ fontSize: 11, color: '#9CA3AF' }}>{selectedCaregiver.address}</p>
               </div>
