@@ -604,8 +604,8 @@ export default function Home() {
         }
       }
 
-      if (type === 'customer') setCustomers(p => [...p, ...newItems]);
-      else setCaregivers(p => [...p, ...newItems]);
+      if (type === 'customer') setCustomers(newItems);
+      else setCaregivers(newItems);
 
       alert(`${newItems.length}건이 추가되었습니다.`);
     } catch (e) {
