@@ -1,4 +1,6 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv(); // reads UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
 
 const ALLOWED = ['customers', 'caregivers'];
 
@@ -13,19 +15,18 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const data = (await kv.get(key)) ?? [];
+      const data = (await redis.get(key)) ?? [];
       return res.status(200).json(data);
     }
 
     if (req.method === 'POST') {
-      // req.body is already parsed as JSON by Next.js
-      await kv.set(key, req.body);
+      await redis.set(key, req.body);
       return res.status(200).json({ ok: true });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (err) {
-    console.error(`KV error [${type}]:`, err);
+    console.error(`Redis error [${type}]:`, err);
     return res.status(500).json({ error: 'Storage unavailable' });
   }
 }
