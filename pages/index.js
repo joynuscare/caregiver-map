@@ -6,6 +6,7 @@ import Head from 'next/head';
 // ──────────────────────────────────────────
 const MILES_TO_METERS = 1609.344;
 const STRENGTH_OPTIONS = ['F', 'S', 'R', 'T', 'C', 'M'];
+const STRENGTH_LABELS = { F: '음식', S: '중환자', R: '라이드', T: '통역', C: '청소', M: '남자' };
 const FILTER_OPTIONS = [
   { key: 'F', label: '음식' },
   { key: 'S', label: '중환자' },
@@ -14,7 +15,7 @@ const FILTER_OPTIONS = [
   { key: 'T', label: '통역' },
 ];
 const NEEDS_WORK_OPTIONS = ['Y', 'N', 'K'];
-const DEFAULT_CG = { name: '', address: '', needsWork: 'N', strengths: [], memo: '' };
+const DEFAULT_CG = { name: '', address: '', needsWork: 'N', strengths: [], memo: '', cgId: '' };
 const DEFAULT_CS = { name: '', address: '' };
 const LA_CENTER = { lat: 34.0522, lng: -118.2437 };
 const POPUP_W = 260;
@@ -138,6 +139,17 @@ function CaregiverForm({ data, onSave, onCancel }) {
       <Field label="이름">
         <input style={S.input} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="홍길동" />
       </Field>
+      <Field label="ID (4자리 숫자)">
+        <input
+          style={S.input}
+          type="number"
+          min="1000"
+          max="9999"
+          value={form.cgId}
+          onChange={e => setForm(p => ({ ...p, cgId: e.target.value }))}
+          placeholder="예: 3088"
+        />
+      </Field>
       <Field label="주소">
         <input style={S.input} value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="123 Main St, Los Angeles, CA" />
       </Field>
@@ -164,7 +176,7 @@ function CaregiverForm({ data, onSave, onCancel }) {
                 fontSize: 13,
               }}
             >
-              {s}
+              {STRENGTH_LABELS[s]}
             </button>
           ))}
         </div>
@@ -583,6 +595,7 @@ export default function Home() {
               needsWork: (row.needswork || row.needsWork || 'N').toUpperCase(),
               strengths,
               memo: row.memo || '',
+              cgId: row.cgid || row.cgId || row.id || '',
               ...coords,
             });
           }
@@ -939,17 +952,35 @@ export default function Home() {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 {/* Name is clickable → opens edit modal */}
-                <strong
-                  style={{ fontSize: 16, color: '#7C3AED', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }}
-                  title="클릭하여 수정"
-                  onClick={() => {
-                    const cg = selectedCaregiver;
-                    setSelectedCaregiver(null);
-                    setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } });
-                  }}
-                >
-                  {selectedCaregiver.name}
-                </strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                  <strong
+                    style={{ fontSize: 16, color: '#7C3AED', cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title="클릭하여 수정"
+                    onClick={() => {
+                      const cg = selectedCaregiver;
+                      setSelectedCaregiver(null);
+                      setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } });
+                    }}
+                  >
+                    {selectedCaregiver.name}
+                  </strong>
+                  {selectedCaregiver.cgId && (
+                    <a
+                      href={`https://2320.axiscare.com/?calendar.php&id=${selectedCaregiver.cgId}&type=2`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="AxisCare에서 보기"
+                      style={{ color: '#6B7280', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                      onClick={e => e.stopPropagation()}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
                 <button
                   onClick={() => setSelectedCaregiver(null)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 18, lineHeight: 1, marginLeft: 8, flexShrink: 0 }}
