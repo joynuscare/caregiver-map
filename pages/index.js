@@ -337,13 +337,27 @@ export default function Home() {
     }
     if (document.getElementById('cgmap-gmaps')) return;
 
+    // Called by Google Maps when key is invalid or billing/API not set up
+    window.gm_authFailure = () => {
+      localStorage.removeItem('cgmap_apikey');
+      setApiKey('');
+      setMapLoaded(false);
+      setMapError('API 키가 유효하지 않습니다. 다시 확인 후 입력해주세요.');
+      mapInst.current = null;
+      const s = document.getElementById('cgmap-gmaps');
+      if (s) s.remove();
+    };
+
     const script = document.createElement('script');
     script.id = 'cgmap-gmaps';
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
     script.async = true;
     script.onload = () => setMapLoaded(true);
     script.onerror = () => {
+      localStorage.removeItem('cgmap_apikey');
+      setApiKey('');
       setMapError('Google Maps 로드에 실패했습니다. API 키를 확인해주세요.');
+      mapInst.current = null;
     };
     document.head.appendChild(script);
   }, [apiKey]);
