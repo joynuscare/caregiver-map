@@ -758,6 +758,8 @@ export default function Home() {
                           setSelectedCgIds(p => p.includes(cg.id) ? p.filter(id => id !== cg.id) : [...p, cg.id]);
                         } else {
                           setSelectedCgIds([cg.id]);
+                          setPopupPos({ x: 20, y: 20 });
+                          setSelectedCaregiver(cg);
                         }
                       }}
                     >
