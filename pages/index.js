@@ -396,14 +396,15 @@ export default function Home() {
     mapInst.current.addListener('click', () => setSelectedCaregiver(null));
   }, [mapLoaded]);
 
-  // ── Marker color: yellow=normal, red=needsWork=Y, orange=filter match ──
+  // ── Marker color ──────────────────────
   const markerColor = useCallback(
     cg => {
+      if (selectedCgIds.includes(cg.id)) return '#8B5CF6';                    // purple - sidebar selected
       if (cg.needsWork === 'Y') return '#EF4444';                              // red
-      if (activeFilter && cg.strengths?.includes(activeFilter)) return '#F97316'; // orange
+      if (activeFilter && cg.strengths?.includes(activeFilter)) return '#111111'; // black - filter match
       return '#FBBF24';                                                          // yellow
     },
-    [activeFilter]
+    [activeFilter, selectedCgIds]
   );
 
   // ── Render caregiver markers ────────────
@@ -894,11 +895,6 @@ export default function Home() {
                   </button>
                 ))}
               </div>
-              {activeFilter && (
-                <p style={{ fontSize: 11, color: '#7C3AED', marginTop: 6 }}>
-                  ● 주황색 = <b>{FILTER_OPTIONS.find(f => f.key === activeFilter)?.label}</b> 강점 보유
-                </p>
-              )}
             </div>
 
             {/* 4. 간병인 전체 */}
