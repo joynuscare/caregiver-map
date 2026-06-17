@@ -15,7 +15,7 @@ const FILTER_OPTIONS = [
   { key: 'C', label: '청소' },
   { key: 'M', label: '남자' },
 ];
-const NEEDS_WORK_OPTIONS = ['Y', 'N', 'K'];
+const NEEDS_WORK_OPTIONS = ['Y', 'N', 'K', 'G'];
 const ADMIN_OPTIONS = ['Kim', 'Park', 'Mika', 'Ryu'];
 const DEFAULT_CG = { name: '', address: '', needsWork: 'N', strengths: [], memo: '', cgId: '' };
 const DEFAULT_CS = { name: '', address: '', admin: '' };
@@ -415,6 +415,7 @@ export default function Home() {
 
     caregivers.forEach(cg => {
       if (cg.lat == null || cg.lng == null) return;
+      if (cg.needsWork === 'G') return; // G = 지도에서 숨김
       const marker = new window.google.maps.Marker({
         position: { lat: cg.lat, lng: cg.lng },
         map: mapInst.current,
@@ -742,16 +743,10 @@ export default function Home() {
                     <div
                       key={cg.id}
                       style={{
-                        padding: '4px 8px',
-                        borderRadius: 6,
-                        cursor: 'pointer',
-                        marginBottom: 3,
+                        padding: '4px 8px', borderRadius: 6, cursor: 'pointer', marginBottom: 3,
                         background: selectedCgIds.includes(cg.id) ? '#F3E8FF' : '#FDF4FF',
                         border: `1px solid ${selectedCgIds.includes(cg.id) ? '#C4B5FD' : '#E9D5FF'}`,
-                        fontSize: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
+                        fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
                       }}
                       onClick={e => {
                         if (e.ctrlKey || e.metaKey) {
@@ -766,13 +761,7 @@ export default function Home() {
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
                       {cg.cgId && (
-                        <a
-                          href={`https://2320.axiscare.com/?calendar.php&id=${cg.cgId}&type=2`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                        >
+                        <a href={`https://2320.axiscare.com/?calendar.php&id=${cg.cgId}&type=2`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                           <LinkIcon />
                         </a>
                       )}
@@ -782,8 +771,86 @@ export default function Home() {
               )}
             </div>
 
-            {/* 2. 고객 리스트 */}
+            {/* 2. 간병인 전체 */}
             <div style={S.sectionBox}>
+              <div style={S.sectionTitle}>간병인 전체 ({caregivers.length})</div>
+
+              {adminMode && (
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <button style={S.btnAdd} onClick={() => setCgModal({ open: true, mode: 'add', data: DEFAULT_CG })}>추가</button>
+                  <button style={S.btnEdit} onClick={() => { const cg = caregivers.find(c => c.id === selectedCgIds[0]); if (!cg) return alert('수정할 간병인을 먼저 선택해주세요.'); setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } }); }}>수정</button>
+                  <button style={S.btnDel} onClick={handleDeleteCg}>삭제</button>
+                </div>
+              )}
+
+              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: adminMode ? 8 : 0 }}>
+                {caregivers.length === 0 ? (
+                  <p style={{ color: '#9CA3AF', fontSize: 12 }}>간병인이 없습니다</p>
+                ) : (
+                  caregivers.map(cg => (
+                    <div
+                      key={cg.id}
+                      style={{
+                        padding: '5px 9px', borderRadius: 6, cursor: 'pointer', marginBottom: 3,
+                        background: selectedCgIds.includes(cg.id) ? '#F3E8FF' : 'white',
+                        border: `1px solid ${selectedCgIds.includes(cg.id) ? '#C4B5FD' : '#E5E7EB'}`,
+                        fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
+                      }}
+                      onClick={e => {
+                        if (e.ctrlKey || e.metaKey) {
+                          setSelectedCgIds(p => p.includes(cg.id) ? p.filter(id => id !== cg.id) : [...p, cg.id]);
+                        } else {
+                          setSelectedCgIds([cg.id]);
+                          setPopupPos({ x: 20, y: 20 });
+                          setSelectedCaregiver(cg);
+                        }
+                      }}
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: cg.needsWork === 'Y' ? '#EF4444' : '#FBBF24' }} />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
+                      {cg.cgId && (
+                        <a href={`https://2320.axiscare.com/?calendar.php&id=${cg.cgId}&type=2`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                          <LinkIcon />
+                        </a>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {adminMode && (
+                <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
+                  📁 CSV 업로드 (간병인)
+                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'caregiver'); e.target.value = ''; }} />
+                </label>
+              )}
+            </div>
+
+            {/* 3. 간병인 필터 */}
+            <div style={S.sectionBox}>
+              <div style={S.sectionTitle}>간병인 필터</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
+                {FILTER_OPTIONS.map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setActiveFilter(p => (p === f.key ? null : f.key))}
+                    style={{
+                      flex: 1, padding: '5px 2px', borderRadius: 5,
+                      border: `1.5px solid ${activeFilter === f.key ? '#7C3AED' : '#D1D5DB'}`,
+                      cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                      background: activeFilter === f.key ? '#7C3AED' : 'white',
+                      color: activeFilter === f.key ? 'white' : '#4B5563',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. 고객 리스트 */}
+            <div style={{ ...S.sectionBox, marginBottom: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                 <div style={S.sectionTitle}>고객 리스트 ({customers.length})</div>
                 <div style={{ display: 'flex', gap: 4 }}>
@@ -803,13 +870,11 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Radius inputs inside customer section */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>반경(mi)</span>
                 {radii.map((r, i) => (
                   <input
-                    key={i}
-                    type="number" min="0" step="0.5"
+                    key={i} type="number" min="0" step="0.5"
                     placeholder={i === 0 ? '5' : i === 1 ? '10' : '—'}
                     value={r}
                     onChange={e => setRadii(p => { const n = [...p]; n[i] = e.target.value; return n; })}
@@ -826,18 +891,11 @@ export default function Home() {
                     <div
                       key={c.id}
                       style={{
-                        padding: '6px 10px',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        marginBottom: 3,
+                        padding: '6px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 3,
                         background: selectedCsIds.includes(c.id) ? '#DBEAFE' : 'white',
                         border: `1px solid ${selectedCsIds.includes(c.id) ? '#93C5FD' : '#E5E7EB'}`,
                         fontWeight: selectedCustomer?.id === c.id ? 700 : 400,
-                        color: '#1F2937',
-                        fontSize: 13,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
+                        color: '#1F2937', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6,
                       }}
                       onClick={e => {
                         if (e.ctrlKey || e.metaKey) {
@@ -869,101 +927,6 @@ export default function Home() {
                     <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'customer'); e.target.value = ''; }} />
                   </label>
                 </div>
-              )}
-            </div>
-
-            {/* 3. 간병인 필터 */}
-            <div style={S.sectionBox}>
-              <div style={S.sectionTitle}>간병인 필터</div>
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
-                {FILTER_OPTIONS.map(f => (
-                  <button
-                    key={f.key}
-                    onClick={() => setActiveFilter(p => (p === f.key ? null : f.key))}
-                    style={{
-                      flex: 1,
-                      padding: '5px 2px',
-                      borderRadius: 5,
-                      border: `1.5px solid ${activeFilter === f.key ? '#7C3AED' : '#D1D5DB'}`,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      background: activeFilter === f.key ? '#7C3AED' : 'white',
-                      color: activeFilter === f.key ? 'white' : '#4B5563',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 4. 간병인 전체 */}
-            <div style={{ ...S.sectionBox, marginBottom: 0 }}>
-              <div style={S.sectionTitle}>간병인 전체 ({caregivers.length})</div>
-
-              {adminMode && (
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  <button style={S.btnAdd} onClick={() => setCgModal({ open: true, mode: 'add', data: DEFAULT_CG })}>추가</button>
-                  <button style={S.btnEdit} onClick={() => { const cg = caregivers.find(c => c.id === selectedCgIds[0]); if (!cg) return alert('수정할 간병인을 먼저 선택해주세요.'); setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } }); }}>수정</button>
-                  <button style={S.btnDel} onClick={handleDeleteCg}>삭제</button>
-                </div>
-              )}
-
-              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: adminMode ? 8 : 0 }}>
-                {caregivers.length === 0 ? (
-                  <p style={{ color: '#9CA3AF', fontSize: 12 }}>간병인이 없습니다</p>
-                ) : (
-                  caregivers.map(cg => (
-                    <div
-                      key={cg.id}
-                      style={{
-                        padding: '5px 9px',
-                        borderRadius: 6,
-                        cursor: 'pointer',
-                        marginBottom: 3,
-                        background: selectedCgIds.includes(cg.id) ? '#F3E8FF' : 'white',
-                        border: `1px solid ${selectedCgIds.includes(cg.id) ? '#C4B5FD' : '#E5E7EB'}`,
-                        fontSize: 12,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                      onClick={e => {
-                        if (e.ctrlKey || e.metaKey) {
-                          setSelectedCgIds(p => p.includes(cg.id) ? p.filter(id => id !== cg.id) : [...p, cg.id]);
-                        } else {
-                          setSelectedCgIds([cg.id]);
-                        }
-                      }}
-                    >
-                      <span style={{
-                        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                        background: cg.needsWork === 'Y' ? '#EF4444' : '#FBBF24',
-                      }} />
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
-                      {cg.cgId ? (
-                        <a
-                          href={`https://2320.axiscare.com/?calendar.php&id=${cg.cgId}&type=2`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center', flexShrink: 0 }}
-                        >
-                          <LinkIcon />
-                        </a>
-                      ) : null}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {adminMode && (
-                <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
-                  📁 CSV 업로드 (간병인)
-                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'caregiver'); e.target.value = ''; }} />
-                </label>
               )}
             </div>
 
