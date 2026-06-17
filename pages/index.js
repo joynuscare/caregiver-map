@@ -10,9 +10,10 @@ const STRENGTH_LABELS = { F: '음식', S: '중환자', R: '라이드', T: '통�
 const FILTER_OPTIONS = [
   { key: 'F', label: '음식' },
   { key: 'S', label: '중환자' },
-  { key: 'M', label: '남자' },
   { key: 'R', label: '라이드' },
   { key: 'T', label: '통역' },
+  { key: 'C', label: '청소' },
+  { key: 'M', label: '남자' },
 ];
 const NEEDS_WORK_OPTIONS = ['Y', 'N', 'K'];
 const ADMIN_OPTIONS = ['Kim', 'Park', 'Mika', 'Ryu'];
@@ -237,6 +238,19 @@ function CustomerForm({ data, onSave, onCancel }) {
 }
 
 // ──────────────────────────────────────────
+// Link icon SVG
+// ──────────────────────────────────────────
+function LinkIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+// ──────────────────────────────────────────
 // Main app
 // ──────────────────────────────────────────
 export default function Home() {
@@ -264,7 +278,7 @@ export default function Home() {
   const [isLoaded, setIsLoaded] = useState(false);
 
   const [adminMode, setAdminMode] = useState(false);
-  const [csSortOrder, setCsSortOrder] = useState('alpha'); // 'alpha' | 'admin'
+  const [csSortOrder, setCsSortOrder] = useState('alpha');
 
   // ── Refs ───────────────────────────────
   const mapRef = useRef(null);
@@ -275,7 +289,6 @@ export default function Home() {
   const popupRef = useRef(null);
 
   // ── Persistence ────────────────────────
-
   useEffect(() => {
     try {
       const k = localStorage.getItem('cgmap_apikey');
@@ -340,7 +353,7 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleMouseDown);
   }, [selectedCaregiver]);
 
-  // ── Load Google Maps script ─────────────
+  // ── Load Google Maps ────────────────────
   useEffect(() => {
     if (!apiKey) return;
     if (typeof window !== 'undefined' && window.google?.maps) {
@@ -383,12 +396,12 @@ export default function Home() {
     mapInst.current.addListener('click', () => setSelectedCaregiver(null));
   }, [mapLoaded]);
 
-  // ── Caregiver marker color ──────────────
+  // ── Marker color: yellow=normal, red=needsWork=Y, orange=filter match ──
   const markerColor = useCallback(
     cg => {
-      if (activeFilter && cg.strengths?.includes(activeFilter)) return '#FBBF24';
-      if (cg.needsWork === 'Y') return '#8B5CF6';
-      return '#EF4444';
+      if (cg.needsWork === 'Y') return '#EF4444';                              // red
+      if (activeFilter && cg.strengths?.includes(activeFilter)) return '#F97316'; // orange
+      return '#FBBF24';                                                          // yellow
     },
     [activeFilter]
   );
@@ -428,16 +441,14 @@ export default function Home() {
     });
   }, [caregivers, activeFilter, mapLoaded, markerColor]);
 
-  // ── Render customer marker + radius circles ──
+  // ── Customer marker + radius circles ────
   useEffect(() => {
     if (!mapInst.current) return;
-
     if (csMarker.current) { csMarker.current.setMap(null); csMarker.current = null; }
     radiusCircles.current.forEach(c => c.setMap(null));
     radiusCircles.current = [];
 
     if (!selectedCustomer?.lat) return;
-
     const pos = { lat: selectedCustomer.lat, lng: selectedCustomer.lng };
 
     csMarker.current = new window.google.maps.Marker({
@@ -493,7 +504,7 @@ export default function Home() {
     setLoading('간병인 주소 검색 중...');
     try {
       const coords = await geocode(form.address);
-      setCaregivers(p => [...p, { ...form, id: uid(), ...coords }]);
+      setCaregivers(p => [...p, { ...form, id: uid(), ...coords }].sort((a, b) => a.name.localeCompare(b.name)));
       setCgModal({ open: false, mode: 'add', data: DEFAULT_CG });
     } catch {
       alert('주소를 찾을 수 없습니다. 정확한 주소를 입력해주세요.');
@@ -505,7 +516,10 @@ export default function Home() {
     setLoading('간병인 주소 검색 중...');
     try {
       const coords = await geocode(form.address);
-      setCaregivers(p => p.map(cg => (cg.id === form.id ? { ...form, ...coords } : cg)));
+      setCaregivers(p =>
+        p.map(cg => (cg.id === form.id ? { ...form, ...coords } : cg))
+         .sort((a, b) => a.name.localeCompare(b.name))
+      );
       if (selectedCaregiver?.id === form.id) setSelectedCaregiver({ ...form, ...coords });
       setCgModal({ open: false, mode: 'add', data: DEFAULT_CG });
     } catch {
@@ -573,24 +587,14 @@ export default function Home() {
         const vals = splitCSVLine(lines[i]);
         const row = {};
         headers.forEach((h, idx) => (row[h] = (vals[idx] || '').trim()));
-
         if (!row.name || !row.address) continue;
         try {
           const coords = await geocode(row.address);
           if (type === 'customer') {
-            newItems.push({
-              id: uid(),
-              name: row.name,
-              address: row.address,
-              admin: row.admin || '',
-              ...coords,
-            });
+            newItems.push({ id: uid(), name: row.name, address: row.address, admin: row.admin || '', ...coords });
           } else {
             const rawStrengths = row.strengths || '';
-            const strengths = rawStrengths
-              .toUpperCase()
-              .split('')
-              .filter(s => STRENGTH_OPTIONS.includes(s));
+            const strengths = rawStrengths.toUpperCase().split('').filter(s => STRENGTH_OPTIONS.includes(s));
             newItems.push({
               id: uid(),
               name: row.name,
@@ -607,11 +611,10 @@ export default function Home() {
         }
       }
 
-      // Replace existing data
       if (type === 'customer') {
         setCustomers(newItems);
       } else {
-        setCaregivers(newItems);
+        setCaregivers(newItems.sort((a, b) => a.name.localeCompare(b.name)));
       }
 
       alert(`${newItems.length}건으로 교체되었습니다.`);
@@ -623,20 +626,14 @@ export default function Home() {
 
   // ── Admin toggle ───────────────────────
   const handleAdminToggle = () => {
-    if (adminMode) {
-      setAdminMode(false);
-      return;
-    }
+    if (adminMode) { setAdminMode(false); return; }
     const pw = prompt('비밀번호를 입력해주세요:');
     if (pw === null) return;
-    if (pw === ADMIN_PASSWORD) {
-      setAdminMode(true);
-    } else {
-      alert('비밀번호가 틀렸습니다.');
-    }
+    if (pw === ADMIN_PASSWORD) setAdminMode(true);
+    else alert('비밀번호가 틀렸습니다.');
   };
 
-  // ── Sorted customers ───────────────────
+  // ── Derived lists ──────────────────────
   const sortedCustomers = [...customers].sort((a, b) => {
     if (csSortOrder === 'admin') {
       const adminCmp = (a.admin || 'zzz').localeCompare(b.admin || 'zzz');
@@ -645,7 +642,6 @@ export default function Home() {
     return a.name.localeCompare(b.name);
   });
 
-  // ── Caregivers needing work ─────────────
   const needsWorkCaregivers = caregivers.filter(cg => cg.needsWork === 'Y');
 
   // ── API key screen ─────────────────────
@@ -661,27 +657,14 @@ export default function Home() {
               간병인 지도 서비스에 오신 것을 환영합니다.<br />
               시작하려면 Google Maps API 키를 입력해주세요.
             </p>
-            <form
-              onSubmit={e => {
-                e.preventDefault();
-                if (!apiKeyInput.trim()) return;
-                localStorage.setItem('cgmap_apikey', apiKeyInput.trim());
-                setApiKey(apiKeyInput.trim());
-              }}
-            >
+            <form onSubmit={e => { e.preventDefault(); if (!apiKeyInput.trim()) return; localStorage.setItem('cgmap_apikey', apiKeyInput.trim()); setApiKey(apiKeyInput.trim()); }}>
               <input
                 style={{ ...S.input, padding: '13px 16px', fontSize: 14, marginBottom: 14, border: '1.5px solid #D1D5DB', borderRadius: 10 }}
-                type="text"
-                placeholder="Google Maps API Key"
-                value={apiKeyInput}
-                onChange={e => setApiKeyInput(e.target.value)}
-                autoFocus
-                required
+                type="text" placeholder="Google Maps API Key"
+                value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)}
+                autoFocus required
               />
-              <button
-                type="submit"
-                style={{ width: '100%', padding: 14, background: '#7C3AED', color: 'white', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}
-              >
+              <button type="submit" style={{ width: '100%', padding: 14, background: '#7C3AED', color: 'white', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
                 시작하기
               </button>
             </form>
@@ -713,39 +696,29 @@ export default function Home() {
       )}
 
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+
         {/* ── Sidebar ──────────────────────── */}
         <div style={{ width: 300, height: '100vh', display: 'flex', flexDirection: 'column', borderRight: '1px solid #E5E7EB', background: '#F9FAFB', flexShrink: 0 }}>
 
           {/* Header */}
-          <div style={{ padding: '16px 16px 8px', flexShrink: 0, borderBottom: '1px solid #E5E7EB', background: 'white' }}>
+          <div style={{ padding: '16px 16px 10px', flexShrink: 0, borderBottom: '1px solid #E5E7EB', background: 'white' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: '#1F2937' }}>🗺️ 간병인 지도</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button
                   onClick={handleAdminToggle}
                   style={{
-                    fontSize: 11,
-                    padding: '4px 10px',
-                    borderRadius: 6,
+                    fontSize: 11, padding: '4px 10px', borderRadius: 6,
                     border: `1px solid ${adminMode ? '#F59E0B' : '#D1D5DB'}`,
                     background: adminMode ? '#FEF3C7' : 'white',
                     color: adminMode ? '#B45309' : '#6B7280',
-                    cursor: 'pointer',
-                    fontWeight: 600,
+                    cursor: 'pointer', fontWeight: 600,
                   }}
                 >
                   {adminMode ? '관리 중 ✕' : '관리'}
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm('API 키를 초기화하고 처음 화면으로 돌아가시겠습니까?')) {
-                      localStorage.removeItem('cgmap_apikey');
-                      setApiKey('');
-                      setApiKeyInput('');
-                      setMapLoaded(false);
-                      mapInst.current = null;
-                    }
-                  }}
+                  onClick={() => { if (confirm('API 키를 초기화하고 처음 화면으로 돌아가시겠습니까?')) { localStorage.removeItem('cgmap_apikey'); setApiKey(''); setApiKeyInput(''); setMapLoaded(false); mapInst.current = null; } }}
                   style={{ fontSize: 11, color: '#9CA3AF', background: 'none', border: 'none', cursor: 'pointer' }}
                 >
                   키 변경
@@ -754,134 +727,16 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Customer list */}
-          <div style={{ padding: '12px 14px 4px', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={S.sectionTitle}>고객 리스트</div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button
-                  onClick={() => setCsSortOrder('alpha')}
-                  style={{
-                    fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid',
-                    borderColor: csSortOrder === 'alpha' ? '#7C3AED' : '#D1D5DB',
-                    background: csSortOrder === 'alpha' ? '#7C3AED' : 'white',
-                    color: csSortOrder === 'alpha' ? 'white' : '#6B7280',
-                    cursor: 'pointer', fontWeight: 600,
-                  }}
-                >가나다</button>
-                <button
-                  onClick={() => setCsSortOrder('admin')}
-                  style={{
-                    fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid',
-                    borderColor: csSortOrder === 'admin' ? '#7C3AED' : '#D1D5DB',
-                    background: csSortOrder === 'admin' ? '#7C3AED' : 'white',
-                    color: csSortOrder === 'admin' ? 'white' : '#6B7280',
-                    cursor: 'pointer', fontWeight: 600,
-                  }}
-                >Admin</button>
-              </div>
-            </div>
-          </div>
-          <div style={{ flex: '0 0 160px', overflowY: 'auto', padding: '0 14px 8px' }}>
-            {sortedCustomers.length === 0 ? (
-              <p style={{ color: '#9CA3AF', fontSize: 12, padding: '6px 0' }}>고객이 없습니다</p>
-            ) : (
-              sortedCustomers.map(c => (
-                <div
-                  key={c.id}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    marginBottom: 3,
-                    background: selectedCsIds.includes(c.id) ? '#DBEAFE' : 'white',
-                    border: `1px solid ${selectedCsIds.includes(c.id) ? '#93C5FD' : '#E5E7EB'}`,
-                    fontWeight: selectedCustomer?.id === c.id ? 700 : 400,
-                    color: '#1F2937',
-                    fontSize: 13,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                  onClick={e => {
-                    if (e.ctrlKey || e.metaKey) {
-                      setSelectedCsIds(p => p.includes(c.id) ? p.filter(id => id !== c.id) : [...p, c.id]);
-                    } else {
-                      setSelectedCustomer(c);
-                      setSelectedCsIds([c.id]);
-                    }
-                  }}
-                >
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {c.name}</span>
-                  {c.admin && (
-                    <span style={{ fontSize: 10, color: '#7C3AED', background: '#F3E8FF', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{c.admin}</span>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+          {/* ── Scrollable content ──────────── */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px 16px' }}>
 
-          {/* Scrollable bottom panel */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 14px 16px' }}>
-
-            {/* Radius */}
-            <div style={S.sectionBox}>
-              <div style={S.sectionTitle}>반경 선택 (마일)</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {radii.map((r, i) => (
-                  <input
-                    key={i}
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    placeholder={i === 0 ? '5' : i === 1 ? '10' : '—'}
-                    value={r}
-                    onChange={e => setRadii(p => { const n = [...p]; n[i] = e.target.value; return n; })}
-                    style={{ width: 52, padding: '6px 4px', border: '1px solid #D1D5DB', borderRadius: 7, fontSize: 13, textAlign: 'center' }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Filter — single row */}
-            <div style={S.sectionBox}>
-              <div style={S.sectionTitle}>간병인 필터</div>
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'nowrap', overflowX: 'auto' }}>
-                {FILTER_OPTIONS.map(f => (
-                  <button
-                    key={f.key}
-                    onClick={() => setActiveFilter(p => (p === f.key ? null : f.key))}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: 16,
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0,
-                      background: activeFilter === f.key ? '#7C3AED' : '#E5E7EB',
-                      color: activeFilter === f.key ? 'white' : '#4B5563',
-                    }}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-              {activeFilter && (
-                <p style={{ fontSize: 11, color: '#7C3AED', marginTop: 6 }}>
-                  ● 노란색 = <b>{FILTER_OPTIONS.find(f => f.key === activeFilter)?.label}</b> 강점 보유
-                </p>
-              )}
-            </div>
-
-            {/* Caregivers needing work (needsWork=Y) */}
+            {/* 1. 업무 필요 간병인 */}
             <div style={S.sectionBox}>
               <div style={S.sectionTitle}>업무 필요 간병인 ({needsWorkCaregivers.length})</div>
               {needsWorkCaregivers.length === 0 ? (
                 <p style={{ color: '#9CA3AF', fontSize: 12 }}>없음</p>
               ) : (
-                <div style={{ maxHeight: 110, overflowY: 'auto' }}>
+                <div style={{ maxHeight: 130, overflowY: 'auto' }}>
                   {needsWorkCaregivers.map(cg => (
                     <div
                       key={cg.id}
@@ -905,36 +760,160 @@ export default function Home() {
                         }
                       }}
                     >
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#8B5CF6', flexShrink: 0 }} />
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
+                      {cg.cgId && (
+                        <a
+                          href={`https://2320.axiscare.com/?calendar.php&id=${cg.cgId}&type=2`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                        >
+                          <LinkIcon />
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Caregiver management */}
+            {/* 2. 고객 리스트 */}
             <div style={S.sectionBox}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={S.sectionTitle}>고객 리스트 ({customers.length})</div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {['abc', 'Admin'].map(key => (
+                    <button
+                      key={key}
+                      onClick={() => setCsSortOrder(key === 'abc' ? 'alpha' : 'admin')}
+                      style={{
+                        fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid',
+                        borderColor: (key === 'abc' ? csSortOrder === 'alpha' : csSortOrder === 'admin') ? '#7C3AED' : '#D1D5DB',
+                        background: (key === 'abc' ? csSortOrder === 'alpha' : csSortOrder === 'admin') ? '#7C3AED' : 'white',
+                        color: (key === 'abc' ? csSortOrder === 'alpha' : csSortOrder === 'admin') ? 'white' : '#6B7280',
+                        cursor: 'pointer', fontWeight: 600,
+                      }}
+                    >{key}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Radius inputs inside customer section */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>반경(mi)</span>
+                {radii.map((r, i) => (
+                  <input
+                    key={i}
+                    type="number" min="0" step="0.5"
+                    placeholder={i === 0 ? '5' : i === 1 ? '10' : '—'}
+                    value={r}
+                    onChange={e => setRadii(p => { const n = [...p]; n[i] = e.target.value; return n; })}
+                    style={{ width: 48, padding: '5px 4px', border: '1px solid #D1D5DB', borderRadius: 7, fontSize: 12, textAlign: 'center' }}
+                  />
+                ))}
+              </div>
+
+              <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                {sortedCustomers.length === 0 ? (
+                  <p style={{ color: '#9CA3AF', fontSize: 12 }}>고객이 없습니다</p>
+                ) : (
+                  sortedCustomers.map(c => (
+                    <div
+                      key={c.id}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        marginBottom: 3,
+                        background: selectedCsIds.includes(c.id) ? '#DBEAFE' : 'white',
+                        border: `1px solid ${selectedCsIds.includes(c.id) ? '#93C5FD' : '#E5E7EB'}`,
+                        fontWeight: selectedCustomer?.id === c.id ? 700 : 400,
+                        color: '#1F2937',
+                        fontSize: 13,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      onClick={e => {
+                        if (e.ctrlKey || e.metaKey) {
+                          setSelectedCsIds(p => p.includes(c.id) ? p.filter(id => id !== c.id) : [...p, c.id]);
+                        } else {
+                          setSelectedCustomer(c);
+                          setSelectedCsIds([c.id]);
+                        }
+                      }}
+                    >
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📍 {c.name}</span>
+                      {c.admin && (
+                        <span style={{ fontSize: 10, color: '#7C3AED', background: '#F3E8FF', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>{c.admin}</span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {adminMode && (
+                <div style={{ marginTop: 10, borderTop: '1px solid #F3F4F6', paddingTop: 10 }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                    <button style={S.btnAdd} onClick={() => setCsModal({ open: true, mode: 'add', data: DEFAULT_CS })}>추가</button>
+                    <button style={S.btnEdit} onClick={() => { const c = customers.find(c => c.id === selectedCsIds[0]); if (!c) return alert('수정할 고객을 먼저 선택해주세요.'); setCsModal({ open: true, mode: 'edit', data: { ...c } }); }}>수정</button>
+                    <button style={S.btnDel} onClick={handleDeleteCs}>삭제</button>
+                  </div>
+                  <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
+                    📁 CSV 업로드 (고객)
+                    <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'customer'); e.target.value = ''; }} />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* 3. 간병인 필터 */}
+            <div style={S.sectionBox}>
+              <div style={S.sectionTitle}>간병인 필터</div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'nowrap' }}>
+                {FILTER_OPTIONS.map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setActiveFilter(p => (p === f.key ? null : f.key))}
+                    style={{
+                      flex: 1,
+                      padding: '5px 2px',
+                      borderRadius: 5,
+                      border: `1.5px solid ${activeFilter === f.key ? '#7C3AED' : '#D1D5DB'}`,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: activeFilter === f.key ? '#7C3AED' : 'white',
+                      color: activeFilter === f.key ? 'white' : '#4B5563',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              {activeFilter && (
+                <p style={{ fontSize: 11, color: '#7C3AED', marginTop: 6 }}>
+                  ● 주황색 = <b>{FILTER_OPTIONS.find(f => f.key === activeFilter)?.label}</b> 강점 보유
+                </p>
+              )}
+            </div>
+
+            {/* 4. 간병인 전체 */}
+            <div style={{ ...S.sectionBox, marginBottom: 0 }}>
               <div style={S.sectionTitle}>간병인 전체 ({caregivers.length})</div>
 
               {adminMode && (
-                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   <button style={S.btnAdd} onClick={() => setCgModal({ open: true, mode: 'add', data: DEFAULT_CG })}>추가</button>
-                  <button
-                    style={S.btnEdit}
-                    onClick={() => {
-                      const cg = caregivers.find(c => c.id === selectedCgIds[0]);
-                      if (!cg) return alert('수정할 간병인을 먼저 선택해주세요.');
-                      setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } });
-                    }}
-                  >
-                    수정
-                  </button>
+                  <button style={S.btnEdit} onClick={() => { const cg = caregivers.find(c => c.id === selectedCgIds[0]); if (!cg) return alert('수정할 간병인을 먼저 선택해주세요.'); setCgModal({ open: true, mode: 'edit', data: { ...cg, strengths: [...(cg.strengths || [])] } }); }}>수정</button>
                   <button style={S.btnDel} onClick={handleDeleteCg}>삭제</button>
                 </div>
               )}
 
-              <div style={{ maxHeight: 140, overflowY: 'auto', marginBottom: adminMode ? 8 : 0 }}>
+              <div style={{ maxHeight: 200, overflowY: 'auto', marginBottom: adminMode ? 8 : 0 }}>
                 {caregivers.length === 0 ? (
                   <p style={{ color: '#9CA3AF', fontSize: 12 }}>간병인이 없습니다</p>
                 ) : (
@@ -961,56 +940,32 @@ export default function Home() {
                         }
                       }}
                     >
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: cg.needsWork === 'Y' ? '#8B5CF6' : '#EF4444', flexShrink: 0 }} />
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                        background: cg.needsWork === 'Y' ? '#EF4444' : '#FBBF24',
+                      }} />
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cg.name}</span>
-                      <span style={{ fontSize: 10, color: '#9CA3AF', background: '#F3F4F6', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
-                        {cg.needsWork}
-                      </span>
+                      {cg.cgId ? (
+                        <a
+                          href={`https://2320.axiscare.com/?calendar.php&id=${cg.cgId}&type=2`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          style={{ color: '#9CA3AF', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                        >
+                          <LinkIcon />
+                        </a>
+                      ) : null}
                     </div>
                   ))
                 )}
               </div>
 
               {adminMode && (
-                <>
-                  <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
-                    📁 CSV 업로드 (간병인)
-                    <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'caregiver'); e.target.value = ''; }} />
-                  </label>
-                </>
-              )}
-            </div>
-
-            {/* Customer management */}
-            <div style={{ ...S.sectionBox, marginBottom: 0 }}>
-              <div style={S.sectionTitle}>고객</div>
-
-              {adminMode && (
-                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                  <button style={S.btnAdd} onClick={() => setCsModal({ open: true, mode: 'add', data: DEFAULT_CS })}>추가</button>
-                  <button
-                    style={S.btnEdit}
-                    onClick={() => {
-                      const c = customers.find(c => c.id === selectedCsIds[0]);
-                      if (!c) return alert('수정할 고객을 먼저 선택해주세요.');
-                      setCsModal({ open: true, mode: 'edit', data: { ...c } });
-                    }}
-                  >
-                    수정
-                  </button>
-                  <button style={S.btnDel} onClick={handleDeleteCs}>삭제</button>
-                </div>
-              )}
-
-              {adminMode && (
                 <label style={{ display: 'block', padding: '7px 12px', background: '#F3F4F6', border: '1px dashed #D1D5DB', borderRadius: 7, cursor: 'pointer', textAlign: 'center', fontSize: 12, color: '#6B7280' }}>
-                  📁 CSV 업로드 (고객)
-                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'customer'); e.target.value = ''; }} />
+                  📁 CSV 업로드 (간병인)
+                  <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { if (e.target.files[0]) handleCSV(e.target.files[0], 'caregiver'); e.target.value = ''; }} />
                 </label>
-              )}
-
-              {!adminMode && (
-                <p style={{ color: '#9CA3AF', fontSize: 12 }}>관리 버튼을 눌러 편집하세요.</p>
               )}
             </div>
 
@@ -1088,9 +1043,6 @@ export default function Home() {
                 value={selectedCaregiver.strengths?.length ? selectedCaregiver.strengths.map(s => STRENGTH_LABELS[s] || s).join(', ') : '없음'}
               />
               {selectedCaregiver.memo && <InfoRow label="메모" value={selectedCaregiver.memo} />}
-              <div style={{ marginTop: 10, borderTop: '1px solid #F3F4F6', paddingTop: 10 }}>
-                <p style={{ fontSize: 11, color: '#9CA3AF' }}>{selectedCaregiver.address}</p>
-              </div>
             </div>
           )}
         </div>
