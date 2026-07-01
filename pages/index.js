@@ -239,6 +239,7 @@ export default function Home() {
   const csMarker = useRef(null);
   const radiusCircles = useRef([]);
   const popupRef = useRef(null);
+  const sidebarRef = useRef(null);
 
   // Keyboard search refs
   const cgSearchBuf = useRef('');
@@ -292,6 +293,7 @@ export default function Home() {
     const handleMouseDown = (e) => {
       if (popupRef.current?.contains(e.target)) return;
       if (mapRef.current?.contains(e.target)) return;
+      if (sidebarRef.current?.contains(e.target)) return;
       setSelectedCaregiver(null);
     };
     document.addEventListener('mousedown', handleMouseDown);
@@ -606,7 +608,7 @@ export default function Home() {
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
 
         {/* ── Sidebar ──────────────────────── */}
-        <div style={{ width: 300, height: '100vh', display: 'flex', flexDirection: 'column', borderRight: '1px solid #E5E7EB', background: '#F9FAFB', flexShrink: 0 }}>
+        <div ref={sidebarRef} style={{ width: 300, height: '100vh', display: 'flex', flexDirection: 'column', borderRight: '1px solid #E5E7EB', background: '#F9FAFB', flexShrink: 0 }}>
 
           {/* Header */}
           <div style={{ padding: '16px 16px 10px', flexShrink: 0, borderBottom: '1px solid #E5E7EB', background: 'white' }}>
