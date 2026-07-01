@@ -365,6 +365,7 @@ export default function Home() {
         const mapRect = mapRef.current.getBoundingClientRect();
         setPopupPos({ x: e.domEvent.clientX - mapRect.left, y: e.domEvent.clientY - mapRect.top });
         setSelectedCaregiver(cg);
+        setSelectedCgIds([cg.id]);
       });
 
       cgMarkers.current.push(marker);
