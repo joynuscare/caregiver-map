@@ -613,6 +613,18 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: '#1F2937' }}>🗺️ 간병인 지도</span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  onClick={() => {
+                    if (!selectedCaregiver || !selectedCustomer) return;
+                    const origin = encodeURIComponent(selectedCaregiver.address);
+                    const dest = encodeURIComponent(selectedCustomer.address);
+                    window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`, '_blank');
+                  }}
+                  title={selectedCaregiver && selectedCustomer ? `${selectedCaregiver.name} → ${selectedCustomer.name}` : '간병인과 고객을 각각 한 명씩 선택하세요'}
+                  style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${selectedCaregiver && selectedCustomer ? '#6EE7B7' : '#E5E7EB'}`, background: selectedCaregiver && selectedCustomer ? '#ECFDF5' : '#F9FAFB', color: selectedCaregiver && selectedCustomer ? '#059669' : '#D1D5DB', cursor: selectedCaregiver && selectedCustomer ? 'pointer' : 'default', fontWeight: 600 }}
+                >
+                  지도
+                </button>
                 <button onClick={handleAdminToggle} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: `1px solid ${adminMode ? '#F59E0B' : '#D1D5DB'}`, background: adminMode ? '#FEF3C7' : 'white', color: adminMode ? '#B45309' : '#6B7280', cursor: 'pointer', fontWeight: 600 }}>
                   {adminMode ? '관리 중 ✕' : '관리'}
                 </button>
