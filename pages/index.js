@@ -838,6 +838,15 @@ export default function Home() {
                       </svg>
                     </a>
                   )}
+                  {selectedCustomer ? (
+                    <button
+                      onClick={e => { e.stopPropagation(); const origin = encodeURIComponent(selectedCaregiver.address); const dest = encodeURIComponent(selectedCustomer.address); window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`, '_blank'); }}
+                      title={`${selectedCaregiver.name} → ${selectedCustomer.name}`}
+                      style={{ fontSize: 10, padding: '2px 7px', borderRadius: 5, border: '1px solid #6EE7B7', background: '#ECFDF5', color: '#059669', cursor: 'pointer', fontWeight: 700, flexShrink: 0 }}
+                    >지도</button>
+                  ) : (
+                    <span style={{ fontSize: 10, color: '#D1D5DB', flexShrink: 0 }} title="고객을 먼저 선택하세요">지도</span>
+                  )}
                 </div>
                 <button onClick={() => setSelectedCaregiver(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 18, lineHeight: 1, marginLeft: 8, flexShrink: 0 }}>✕</button>
               </div>
